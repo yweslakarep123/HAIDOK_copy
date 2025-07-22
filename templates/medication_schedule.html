@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Jadwal Minum Obat{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-pills"></i> Atur Jadwal Minum Obat
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form id="addScheduleForm" class="row g-3">
+                        <div class="col-md-6">
+                            <label for="namaObat" class="form-label"><strong>Nama Obat</strong></label>
+                            <input type="text" class="form-control" id="namaObat" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="intervalJam" class="form-label"><strong>Interval (jam)</strong></label>
+                            <input type="number" class="form-control" id="intervalJam" min="1" value="8" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="waktuMulai" class="form-label"><strong>Waktu Mulai</strong></label>
+                            <input type="datetime-local" class="form-control" id="waktuMulai" required>
+                        </div>
+                        <div class="col-12">
+                            <label for="catatan" class="form-label">Catatan (opsional)</label>
+                            <input type="text" class="form-control" id="catatan">
+                        </div>
+                        <div class="col-12 d-flex justify-content-end">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-plus"></i> Tambah Jadwal
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div class="card shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-list"></i> Daftar Jadwal Minum Obat
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="scheduleTable"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Format date to local string
+function formatDate(dt) {
+    const d = new Date(dt);
+    return d.toLocaleString('id-ID', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+async function loadSchedules() {
+    const res = await fetch('/api/medication-schedule');
+    const data = await res.json();
+    renderTable(data);
+}
+
+function renderTable(data) {
+    if (!data.length) {
+        document.getElementById('scheduleTable').innerHTML = `<div class='alert alert-info'>Belum ada jadwal minum obat.</div>`;
+        return;
+    }
+    let html = `<div class='table-responsive'><table class='table table-bordered table-hover align-middle'>`;
+    html += `<thead class='table-light'><tr><th>#</th><th>Nama Obat</th><th>Interval (jam)</th><th>Waktu Mulai</th><th>Catatan</th><th>Status</th><th>Aksi</th></tr></thead><tbody>`;
+    data.forEach((s, i) => {
+        html += `<tr>
+            <td>${i+1}</td>
+            <td>${s.nama_obat}</td>
+            <td>${s.interval_jam}</td>
+            <td>${formatDate(s.waktu_mulai)}</td>
+            <td>${s.catatan || '-'}</td>
+            <td>${s.aktif ? '<span class="badge bg-success">Aktif</span>' : '<span class="badge bg-secondary">Nonaktif</span>'}</td>
+            <td>
+                <button class="btn btn-sm btn-info" onclick="sendTestNotification(${s.id}, 'email')" title="Kirim Tes Email"><i class="fas fa-envelope"></i></button>
+                <button class="btn btn-sm btn-success" onclick="sendTestNotification(${s.id}, 'whatsapp')" title="Kirim Tes WhatsApp"><i class="fab fa-whatsapp"></i></button>
+                <button class="btn btn-sm btn-danger" onclick="deleteSchedule(${s.id})" title="Hapus Jadwal"><i class="fas fa-trash"></i></button>
+            </td>
+        </tr>`;
+    });
+    html += '</tbody></table></div>';
+    document.getElementById('scheduleTable').innerHTML = html;
+}
+
+async function deleteSchedule(id) {
+    if (!confirm('Hapus jadwal ini?')) return;
+    await fetch(`/api/medication-schedule/${id}`, { method: 'DELETE' });
+    loadSchedules();
+}
+
+document.getElementById('addScheduleForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const nama_obat = document.getElementById('namaObat').value.trim();
+    const interval_jam = document.getElementById('intervalJam').value;
+    const waktu_mulai = document.getElementById('waktuMulai').value;
+    const catatan = document.getElementById('catatan').value.trim();
+    if (!nama_obat || !interval_jam || !waktu_mulai) return;
+    await fetch('/api/medication-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nama_obat, interval_jam, waktu_mulai, catatan })
+    });
+    this.reset();
+    loadSchedules();
+});
+
+async function sendTestNotification(scheduleId, method) {
+    const resp = await fetch('/api/test-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schedule_id: scheduleId, method: method })
+    });
+    const result = await resp.json();
+    if (result.success) {
+        alert(`Notifikasi tes via ${method} telah dikirim (atau sedang diproses untuk WhatsApp).`);
+    } else {
+        alert(`Gagal mengirim notifikasi tes: ${result.error}`);
+    }
+}
+
+window.onload = loadSchedules;
+</script>
+
+<style>
+.card {
+    border-radius: 15px;
+}
+.card-header {
+    border-radius: 15px 15px 0 0 !important;
+}
+.btn {
+    border-radius: 10px;
+    font-weight: 500;
+}
+.table th, .table td {
+    vertical-align: middle;
+}
+</style>
+{% endblock %} 

@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+
+{% block title %}Diagnosis Baru - Sistem Diagnosis Penyakit{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Diagnosis Penyakit</h5>
+            </div>
+            <div class="card-body p-0" style="height: 70vh; display: flex; flex-direction: column;">
+                <div class="chat-container p-3 flex-grow-1 overflow-auto" id="chatContainer" style="background: #f8f9fa;">
+                    <div class="message bot-message mb-2">
+                        <div class="d-flex align-items-start">
+                            <div class="avatar bg-primary text-white me-2">AI</div>
+                            <div>
+                                Selamat datang di Sistem Diagnosis Penyakit. Silakan jelaskan keluhan Anda atau upload gambar terkait kesehatan.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Nama file gambar yang dipilih -->
+                <div id="selectedImageName" class="text-secondary px-3 pt-2" style="font-size: 0.95rem; min-height: 1.5em;"></div>
+                <form id="chatForm" class="chat-input-bar p-3 border-top bg-white" style="display: flex; gap: 0.5rem; align-items: center;">
+                    <label for="imageInput" class="btn btn-outline-secondary mb-0" style="display: flex; align-items: center;">
+                        <i class="fas fa-image"></i>
+                        <input type="file" id="imageInput" name="image" accept="image/*" style="display: none;">
+                    </label>
+                    <input type="text" id="userInput" class="form-control" placeholder="Ketik pesan atau keluhan Anda..." autocomplete="off">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let conversationHistory = '';
+let selectedImage = null;
+let historyId = null;
+let currentDiagnosisId = null;
+
+const chatContainer = document.getElementById('chatContainer');
+const chatForm = document.getElementById('chatForm');
+const userInput = document.getElementById('userInput');
+const imageInput = document.getElementById('imageInput');
+const selectedImageNameDiv = document.getElementById('selectedImageName');
+
+// Cek URL parameters untuk history
+const urlParams = new URLSearchParams(window.location.search);
+historyId = urlParams.get('history_id');
+
+// Load riwayat percakapan jika ada
+if (historyId) {
+    loadDiagnosisHistory();
+}
+
+async function loadDiagnosisHistory() {
+    try {
+        const response = await fetch(`/get-diagnosis-history/${historyId}`);
+        const data = await response.json();
+        
+        console.log('=== LOADING DIAGNOSIS HISTORY ===');
+        console.log('History data:', data);
+        
+        if (data.conversation_history) {
+            conversationHistory = data.conversation_history;
+            currentDiagnosisId = historyId; // Set current diagnosis ID untuk lanjutan percakapan
+            
+            console.log('Loaded conversation history:', conversationHistory);
+            console.log('Set current diagnosis ID:', currentDiagnosisId);
+            
+            // Tampilkan riwayat di chat
+            const lines = data.conversation_history.split('\n');
+            for (let i = 0; i < lines.length; i += 2) {
+                if (lines[i] && lines[i + 1]) {
+                    const userMsg = lines[i].replace('Pasien: ', '');
+                    const botMsg = lines[i + 1].replace('Dokter: ', '');
+                    
+                    addMessage({text: userMsg, image: null}, 'user');
+                    addMessage({text: botMsg, image: null}, 'bot', true);
+                }
+            }
+            
+            // Update pesan selamat datang
+            const welcomeMsg = chatContainer.querySelector('.bot-message .d-flex div:last-child');
+            welcomeMsg.innerHTML = 'Selamat datang kembali! Anda dapat melanjutkan percakapan diagnosis sebelumnya atau memberikan informasi tambahan.';
+        }
+    } catch (error) {
+        console.error('Error loading history:', error);
+    }
+}
+
+imageInput.addEventListener('change', function() {
+    if (imageInput.files && imageInput.files[0]) {
+        selectedImage = imageInput.files[0];
+        selectedImageNameDiv.textContent = 'Gambar yang dipilih: ' + selectedImage.name;
+    } else {
+        selectedImage = null;
+        selectedImageNameDiv.textContent = '';
+    }
+});
+
+chatForm.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const message = userInput.value.trim();
+    if (!message && !selectedImage) return;
+
+    // Show user message bubble
+    addMessage({text: message, image: null}, 'user');
+    userInput.value = '';
+
+    // Show loading bubble
+    const loadingDiv = addMessage({text: 'Sedang memproses...', image: null}, 'bot', false, false, true);
+
+    // Prepare form data
+    const formData = new FormData();
+    formData.append('message', message);
+    formData.append('history', conversationHistory);
+    
+    // Always send current_diagnosis_id if we have one
+    if (currentDiagnosisId) {
+        formData.append('current_diagnosis_id', currentDiagnosisId);
+    }
+    // Send history_id if we're continuing a conversation
+    if (historyId) {
+        formData.append('history_id', historyId);
+    }
+    if (selectedImage) {
+        formData.append('image', selectedImage);
+    }
+
+    // Debug logging
+    console.log('=== SENDING CHAT REQUEST ===');
+    console.log('Message:', message);
+    console.log('Conversation history:', conversationHistory);
+    console.log('Current diagnosis ID:', currentDiagnosisId);
+    console.log('History ID:', historyId);
+    console.log('Has image:', selectedImage !== null);
+
+    try {
+        const response = await fetch('/chat', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        // Remove loading bubble
+        loadingDiv.remove();
+        
+        console.log('=== CHAT RESPONSE ===');
+        console.log('Response:', data);
+        
+        if (data.response) {
+            addMessage({text: data.response, image: null}, 'bot', true);
+            conversationHistory += `Pasien: ${message}\nDokter: ${data.response}\n`;
+            
+            // Debug logging
+            console.log('Updated conversation history:', conversationHistory);
+            
+            // Simpan diagnosis ID untuk update selanjutnya
+            if (data.diagnosis_id) {
+                currentDiagnosisId = data.diagnosis_id;
+                console.log('Updated current diagnosis ID:', currentDiagnosisId);
+            }
+            
+            // Simpan percakapan ke database setelah model merespons
+            saveConversationToDatabase(message, data.response, data.diagnosis_id);
+        } else {
+            addMessage({text: data.error || 'Maaf, terjadi kesalahan. Silakan coba lagi.', image: null}, 'bot');
+        }
+    } catch (error) {
+        loadingDiv.remove();
+        addMessage({text: 'Maaf, terjadi kesalahan. Silakan coba lagi.', image: null}, 'bot');
+        console.error('Error in chat:', error);
+    }
+    selectedImage = null;
+    imageInput.value = '';
+    selectedImageNameDiv.textContent = '';
+});
+
+function addMessage(msgObj, sender, isHtml = false, isPreview = false, isLoading = false) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${sender}-message mb-2` + (isLoading ? ' loading-bubble' : '');
+    messageDiv.style.display = 'flex';
+    messageDiv.style.alignItems = 'flex-start';
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar ' + (sender === 'bot' ? 'bg-primary text-white' : 'bg-secondary text-white');
+    avatar.style.marginRight = '0.5rem';
+    avatar.textContent = sender === 'bot' ? 'AI' : 'U';
+    messageDiv.appendChild(avatar);
+    const contentDiv = document.createElement('div');
+    if (msgObj.text) {
+        if (isHtml) {
+            contentDiv.innerHTML += msgObj.text;
+        } else {
+            contentDiv.textContent += msgObj.text;
+        }
+    }
+    if (isLoading) {
+        const spinner = document.createElement('span');
+        spinner.className = 'spinner-border spinner-border-sm ms-2';
+        spinner.setAttribute('role', 'status');
+        spinner.setAttribute('aria-hidden', 'true');
+        contentDiv.appendChild(spinner);
+    }
+    messageDiv.appendChild(contentDiv);
+    chatContainer.appendChild(messageDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    return messageDiv;
+}
+
+async function saveConversationToDatabase(userMessage, botResponse, diagnosisId) {
+    try {
+        console.log('=== SAVING CONVERSATION TO DATABASE ===');
+        console.log('User message:', userMessage);
+        console.log('Bot response:', botResponse);
+        console.log('Diagnosis ID:', diagnosisId);
+        console.log('Current conversation history:', conversationHistory);
+        
+        const saveData = {
+            user_message: userMessage,
+            bot_response: botResponse,
+            conversation_history: conversationHistory,
+            diagnosis_id: diagnosisId || currentDiagnosisId
+        };
+        
+        const response = await fetch('/save-conversation', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(saveData)
+        });
+        
+        const result = await response.json();
+        console.log('Save conversation result:', result);
+        
+        if (result.success) {
+            console.log('Conversation saved successfully');
+        } else {
+            console.error('Failed to save conversation:', result.error);
+        }
+    } catch (error) {
+        console.error('Error saving conversation:', error);
+    }
+}
+</script>
+<script>
+// === PUSH NOTIFICATION INTEGRATION ===
+const VAPID_PUBLIC_KEY = "BPFjKek3GDW1eqA6WbiiRV3HdJl_AXfH77xNr7S2Zq_QOuyrcJGowPVRhDlJ3XFT5TvhuUi1bHO3sAc7o9XSB_c";
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
+async function registerServiceWorkerAndSubscribe() {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+        try {
+            const registration = await navigator.serviceWorker.register('/static/sw.js');
+            console.log('Service Worker registered:', registration);
+            let subscription = await registration.pushManager.getSubscription();
+            if (!subscription) {
+                subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+                });
+                console.log('Push subscription:', subscription);
+            }
+            // Kirim subscription ke backend
+            await fetch('/api/push-subscription', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subscription: subscription.toJSON() })
+            });
+            console.log('Push subscription registered to backend!');
+        } catch (err) {
+            console.error('Push notification registration failed:', err);
+        }
+    } else {
+        console.warn('Push messaging is not supported');
+    }
+}
+
+// Jalankan saat halaman siap
+window.addEventListener('DOMContentLoaded', registerServiceWorkerAndSubscribe);
+</script>
+<style>
+.chat-container {
+    min-height: 350px;
+    max-height: 60vh;
+    overflow-y: auto;
+    background: #f8f9fa;
+}
+.message {
+    padding: 0.5rem 1rem;
+    border-radius: 1.2rem;
+    max-width: 80%;
+    word-break: break-word;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: flex-start;
+}
+.user-message {
+    background: #e3f2fd;
+    align-self: flex-end;
+    flex-direction: row-reverse;
+}
+.bot-message {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    align-self: flex-start;
+}
+.avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1rem;
+    margin-top: 2px;
+}
+.loading-bubble {
+    opacity: 0.7;
+}
+</style>
+{% endblock %} 

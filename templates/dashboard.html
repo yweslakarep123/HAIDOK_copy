@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Sistem Diagnosis Penyakit{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Riwayat Diagnosis</h5>
+                <a href="{{ url_for('diagnosis') }}" class="btn btn-light">
+                    <i class="fas fa-plus"></i> Diagnosis Baru
+                </a>
+            </div>
+            <div class="card-body">
+                {% if diagnoses %}
+                    {% for diagnosis in diagnoses %}
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h6 class="mb-0">Diagnosis pada {{ diagnosis.created_at.strftime('%d %B %Y %H:%M') }}</h6>
+                                    <div>
+                                        <button class="btn btn-sm btn-success me-2" onclick="continueConversation({{ diagnosis.id }})">
+                                            <i class="fas fa-comments"></i> Lanjutkan Percakapan
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary me-2" type="button" 
+                                                data-bs-toggle="collapse" 
+                                                data-bs-target="#diagnosis{{ diagnosis.id }}">
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-danger" onclick="deleteDiagnosis({{ diagnosis.id }})">
+                                            <i class="fas fa-trash"></i> Hapus
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="collapse" id="diagnosis{{ diagnosis.id }}">
+                                <div class="card-body">
+                                    <h6>Gejala:</h6>
+                                    <p class="mb-3">{{ diagnosis.symptoms }}</p>
+                                    
+                                    <div class="diagnosis-content">
+                                        {{ diagnosis.diagnosis | safe }}
+                                    </div>
+                                    
+                                    <h6 class="mt-4">Riwayat Percakapan:</h6>
+                                    <div class="bg-light p-3 rounded">
+                                        <pre class="mb-0">{{ diagnosis.conversation_history }}</pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-clipboard-list fa-3x text-muted mb-3"></i>
+                        <h5>Belum ada riwayat diagnosis</h5>
+                        <p class="text-muted">Mulai diagnosis baru untuk melihat riwayat di sini</p>
+                        <a href="{{ url_for('diagnosis') }}" class="btn btn-primary">
+                            <i class="fas fa-plus"></i> Diagnosis Baru
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function continueConversation(diagnosisId) {
+    // Redirect ke halaman diagnosis dengan riwayat percakapan
+    window.location.href = `/diagnosis?history_id=${diagnosisId}`;
+}
+
+function deleteDiagnosis(diagnosisId) {
+    if (confirm('Apakah Anda yakin ingin menghapus riwayat diagnosis ini? Tindakan ini tidak dapat dibatalkan.')) {
+        fetch(`/delete-diagnosis/${diagnosisId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Reload halaman untuk memperbarui tampilan
+                window.location.reload();
+            } else {
+                alert('Gagal menghapus riwayat diagnosis: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Terjadi kesalahan saat menghapus riwayat diagnosis');
+        });
+    }
+}
+</script>
+{% endblock %} 
